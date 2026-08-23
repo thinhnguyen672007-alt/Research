@@ -1,15 +1,11 @@
-# mine_repos.py
+
 import os
+import re
 import requests
 import pandas as pd
 from datetime import datetime
 
-try:
-    from config import TEST_REPOS
-except ImportError:
-    TEST_REPOS = []
-
-
+# 1. LẤY TOKEN BẢO MẬT
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 HEADERS = {
@@ -20,36 +16,33 @@ if GITHUB_TOKEN:
 
 excel_file = "Pulumi_ACID_Research_Data_Management_v1.0.xlsx"
 
-
+# 2. ĐỌC DANH SÁCH REPO TỪ EXCEL (Không phụ thuộc config.py)
 try:
     df_repo_list = pd.read_excel(excel_file, sheet_name="01_REPOSITORY_LIST")
-    
+    repo_urls = df_repo_list["Repository_URL"].dropna().astype(str).tolist()
 except Exception as e:
-    print(f"Lỗi: Không thể đọc sheet '01_REPOSITORY_LIST' từ file Excel. Hãy kiểm tra lại file! Chi tiết: {e}")
+    print(f"Lỗi: Không thể đọc sheet '01_REPOSITORY_LIST' từ Excel. Chi tiết: {e}")
     exit()
+
+if not repo_urls:
+    print("Danh sách Repository_URL trong Excel đang bị trống!")
+    exit()
+
+
+BUG_KEYWORDS_REGEX = r'\b(fix|fixed|fixes|bug|issue|defect|error|incorrect|wrong|patch|resolve|resolved|crash|fail)\b'
 
 repo_rows = []
 commit_rows = []
 
-repo_urls = df_repo_list["Repository_URL"].dropna().astype(str).tolist()
-if not repo_urls:
-    repo_urls = TEST_REPOS
-
-if not repo_urls:
-    print("Không có Repository_URL nào trong Excel và không có fallback trong config.py.")
-    exit()
-
-print(f"=== BẮT ĐẦU CRAWL {len(repo_urls)} REPO TỪ DANH SÁCH EXCEL ===")
+print(f"=== BẮT ĐẦU CRAWL VÀ LỌC BUG-FIXING COMMITS TỪ {len(repo_urls)} REPO ===")
 
 for idx, url in enumerate(repo_urls, start=1):
-    # Parse Owner và Repo Name từ URL
     parts = url.strip("/").split("/")
     owner, repo_name = parts[-2], parts[-1]
-    
     repo_id = f"REP-{idx:05d}"
-    print(f"[{idx}/{len(repo_urls)}] Đang xử lý repo: {owner}/{repo_name}...")
+    print(f"\n[{idx}/{len(repo_urls)}] Đang quét repo: {owner}/{repo_name}...")
 
-    # Gọi API lấy thông tin Repo
+    # Thu thập thông tin tổng quan Repo
     api_repo_url = f"https://api.github.com/repos/{owner}/{repo_name}"
     res_repo = requests.get(api_repo_url, headers=HEADERS)
     
@@ -67,50 +60,76 @@ for idx, url in enumerate(repo_urls, start=1):
             "Repository_Status": "Eligible",
             "Mining_Run_ID": "RUN-00001",
             "Mining_Date": datetime.now().strftime("%Y-%m-%d"),
-            "Notes": "Mining from Excel list"
+            "Notes": "Clean bug-fixing mining run with word boundary"
         })
     else:
-        print(f"   Lỗi lấy Repo {repo_name}: {res_repo.status_code}")
+        print(f"   Lỗi kết nối tới Repo {repo_name}: {res_repo.status_code}")
         continue
 
-    # Gọi API lấy danh sách commit (ví dụ lấy 10 commit mới nhất mỗi repo)
-    api_commits_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits?per_page=10"
-    res_commits = requests.get(api_commits_url, headers=HEADERS)
-    
-    if res_commits.status_code == 200:
-        commits = res_commits.json()
-        for c_idx, c in enumerate(commits, start=1):
-            commit_id = f"COM-{idx:02d}{c_idx:04d}"
-            commit_hash = c["sha"]
-            commit_msg = c["commit"]["message"].split("\n")[0] # Lấy dòng đầu của message
-            author = c["commit"]["author"]["name"]
-            commit_date = c["commit"]["author"]["date"]
+    # VÒNG LẶP PHÂN TRANG: CÀO TOÀN BỘ COMMIT LỊCH SỬ
+    page = 1
+    per_page = 100 
+    valid_commit_count = 0
+
+    while True:
+        api_commits_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits?per_page={per_page}&page={page}"
+        res_commits = requests.get(api_commits_url, headers=HEADERS)
+        
+        if res_commits.status_code != 200:
+            print(f"   Lỗi khi lấy trang commit số {page}: {res_commits.status_code}")
+            break
             
-            commit_rows.append({
-                "Commit_ID": commit_id,
-                "Repository_ID": repo_id,
-                "Commit_Hash": commit_hash,
-                "Commit_URL": c["html_url"],
-                "Commit_Date": commit_date,
-                "Author": author,
-                "Commit_Message": commit_msg,
-                "Parent_Commit": c["parents"][0]["sha"] if c.get("parents") else None,
-                "Branch": "main",
-                "Files_Changed": 0,
-                "Lines_Added": 0,
-                "Lines_Deleted": 0,
-                "Is_TypeScript": True,
-                "Is_Pulumi_File": True,
-                "Mining_Run_ID": "RUN-00001",
-                "Raw_Source": "GitHub",
-                "Notes": "Commit sample from list"
-            })
+        commits = res_commits.json()
+        
+        # Thoát vòng lặp nếu API trả về mảng rỗng (đã hết lịch sử)
+        if not commits:
+            break
+            
+        print(f"   Đang quét trang {page} ({len(commits)} commits)...")
+        
+        for c in commits:
+            commit_msg = c["commit"]["message"]
+            
+            # KIỂM TRA TỪ KHÓA BẰNG REGEX (Không phân biệt hoa thường)
+            if re.search(BUG_KEYWORDS_REGEX, commit_msg, re.IGNORECASE):
+                valid_commit_count += 1
+                commit_id = f"COM-{idx:02d}{valid_commit_count:04d}"
+                commit_hash = c["sha"]
+                clean_msg = commit_msg.split("\n")[0]
+                author = c["commit"]["author"]["name"] if c["commit"].get("author") else "Unknown"
+                commit_date = c["commit"]["author"]["date"] if c["commit"].get("author") else ""
+                
+                commit_rows.append({
+                    "Commit_ID": commit_id,
+                    "Repository_ID": repo_id,
+                    "Commit_Hash": commit_hash,
+                    "Commit_URL": c["html_url"],
+                    "Commit_Date": commit_date,
+                    "Author": author,
+                    "Commit_Message": clean_msg,
+                    "Parent_Commit": c["parents"][0]["sha"] if c.get("parents") else None,
+                    "Branch": "main",
+                    "Files_Changed": 0,
+                    "Lines_Added": 0,
+                    "Lines_Deleted": 0,
+                    # Đã gỡ bỏ cờ Is_TypeScript/Is_Pulumi ở đây để chuyển trọng trách sang file mine_commit_files.py
+                    "Mining_Run_ID": "RUN-00001",
+                    "Raw_Source": "GitHub",
+                    "Notes": "Filtered bug-fixing commit with regex word boundary"
+                })
+        
+        # Nếu số commit trả về ít hơn giới hạn 100, nghĩa là trang hiện tại là trang cuối cùng
+        if len(commits) < per_page:
+            break
+            
+        page += 1
 
+    print(f"   => Đã lọc chuẩn xác {valid_commit_count} bug-fixing commits từ repo này.")
 
-with pd.ExcelWriter(excel_file, engine="openpyxl", mode="a", if_sheet_exists="overlay") as writer:
+with pd.ExcelWriter(excel_file, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
     if repo_rows:
         pd.DataFrame(repo_rows).to_excel(writer, sheet_name="02_REPOSITORY", index=False)
     if commit_rows:
         pd.DataFrame(commit_rows).to_excel(writer, sheet_name="03_COMMIT", index=False)
 
-print("\n=> HOÀN THÀNH! Đã cào dữ liệu dựa trên danh sách repo từ Excel.")
+print(f"\n=> HOÀN THÀNH! Tổng cộng đã thu thập và làm sạch {len(commit_rows)} bug-fixing commits toàn hệ thống.")

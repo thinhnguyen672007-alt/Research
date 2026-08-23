@@ -77,7 +77,7 @@ for idx, row in df_commits.iterrows():
 
 # Ghi kết quả vào sheet 05_ACID_SCREENING trong file Excel
 if screening_rows:
-    with pd.ExcelWriter(excel_file, engine="openpyxl", mode="a", if_sheet_exists="overlay") as writer:
+    with pd.ExcelWriter(excel_file, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
         pd.DataFrame(screening_rows).to_excel(writer, sheet_name="05_ACID_SCREENING", index=False)
     print(f"\n=> HOÀN THÀNH! Đã dùng Regex quét sâu và tìm thấy {len(screening_rows)} candidate thực chiến.")
 else:

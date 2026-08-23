@@ -1,8 +1,11 @@
+# mine_commit_files.py
+import os
 import requests
 import pandas as pd
-from config import GITHUB_TOKEN
 
-# 1. Đọc danh sách commit đã crawl ở Bước trước
+# Lấy token bảo mật từ biến môi trường
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
 excel_file = "Pulumi_ACID_Research_Data_Management_v1.0.xlsx"
 df_commits = pd.read_excel(excel_file, sheet_name="03_COMMIT")
 
@@ -16,7 +19,7 @@ print("=== BẮT ĐẦU CRAWL FILE CHI TIẾT TỪ CÁC COMMIT ===")
 
 for idx, row in df_commits.iterrows():
     commit_id = row["Commit_ID"]
-    commit_url = row["Commit_URL"] # URL dạng: https://github.com/owner/repo/commit/hash
+    commit_url = row["Commit_URL"]
     
     # Parse owner, repo, commit_hash từ URL
     parts = commit_url.split("/")
@@ -24,7 +27,6 @@ for idx, row in df_commits.iterrows():
     
     print(f"[{idx+1}/{len(df_commits)}] Lấy file sửa đổi của Commit {commit_id}...")
     
-    # Gọi API lấy thông tin chi tiết commit
     api_url = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit_hash}"
     res = requests.get(api_url, headers=HEADERS)
     
@@ -50,8 +52,8 @@ for idx, row in df_commits.iterrows():
                 "Notes": "Pilot mining commit file"
             })
 
-# 2. Ghi bổ sung vào sheet 04_COMMIT_FILE
+# Ghi bổ sung vào sheet 04_COMMIT_FILE
 with pd.ExcelWriter(excel_file, engine="openpyxl", mode="a", if_sheet_exists="overlay") as writer:
     pd.DataFrame(commit_file_rows).to_excel(writer, sheet_name="04_COMMIT_FILE", index=False)
 
-print("\n Đã ghi xong dữ liệu vào sheet 04_COMMIT_FILE.")
+print("\n=> HOÀN THÀNH! Đã ghi xong dữ liệu vào sheet 04_COMMIT_FILE.")

@@ -54,4 +54,4 @@ for idx, row in df_commits.iterrows():
 with pd.ExcelWriter(excel_file, engine="openpyxl", mode="a", if_sheet_exists="overlay") as writer:
     pd.DataFrame(commit_file_rows).to_excel(writer, sheet_name="04_COMMIT_FILE", index=False)
 
-print("\n=> HOÀN THÀNH! Đã ghi xong dữ liệu vào sheet 04_COMMIT_FILE.")
+print("\n Đã ghi xong dữ liệu vào sheet 04_COMMIT_FILE.")

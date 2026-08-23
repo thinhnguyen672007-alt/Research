@@ -95,4 +95,4 @@ except FileNotFoundError:
         if commit_rows:
             pd.DataFrame(commit_rows).to_excel(writer, sheet_name="03_COMMIT", index=False)
 
-print("\nHOÀN THÀNH! Hãy kiểm tra file Excel.")
+print("\nKiểm tra file Excel.")

@@ -1,13 +1,10 @@
-# scan_defects.py
 import os
 import re
 import requests
 import pandas as pd
 from datetime import datetime
 
-# ==========================================
-# BỘ REGEX PATTERN CHUẨN DÙNG CHO MÃ NGUỒN (DIFF)
-# ==========================================
+# REGEX PATTERN
 CONDITIONAL_REGEX = r'\b(if|switch)\s*\(.*(Output|\.apply)'
 IDEMPOTENCY_REGEX = r'\b(Math\.random|Date\.now)\b'
 
@@ -45,10 +42,9 @@ for idx, row in df_commits.iterrows():
         is_idempotency_found = False
         matched_contents = []
         
-        # Duyệt qua từng dòng trong nội dung diff thay đổi code
         for line in lines:
-            # CHỈ QUÉT DÒNG THÊM MỚI (+) VÀ BỎ QUA DÒNG THÔNG TIN (+++)
-            if line.startswith('+') and not line.startswith('+++'):
+            # quét cả dấu - và +
+            if line.startswith(('+', '-')) and not line.startswith(('+++', '---')):
                 if re.search(CONDITIONAL_REGEX, line):
                     is_conditional_found = True
                     matched_contents.append(line.strip())

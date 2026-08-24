@@ -5,7 +5,7 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# 1. LẤY TOKEN BẢO MẬT
+#  LẤY TOKEN BẢO MẬT
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
 HEADERS = {
@@ -71,12 +71,22 @@ for idx, url in enumerate(repo_urls, start=1):
     per_page = 100 
     valid_commit_count = 0
 
+# Thêm timeout để tránh treo máy nếu mất mạng
+
     while True:
         api_commits_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits?per_page={per_page}&page={page}"
-        res_commits = requests.get(api_commits_url, headers=HEADERS)
+        res_commits = None
+        for attempt in range(3):
+            try:
+                res_commits = requests.get(api_commits_url, headers=HEADERS, timeout=30)
+                break
+            except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError):
+                print(f"   Mạng chập chờn, đang thử kết nối lại lần {attempt + 1}...")
+                import time
+                time.sleep(2)
         
-        if res_commits.status_code != 200:
-            print(f"   Lỗi khi lấy trang commit số {page}: {res_commits.status_code}")
+        if res_commits is None or res_commits.status_code != 200:
+            print(f"   Lỗi khi lấy trang commit số {page}.")
             break
             
         commits = res_commits.json()
